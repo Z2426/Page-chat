@@ -1,23 +1,14 @@
-import logo from './logo.svg';
-import './App.css';
+import React from "react";
+import ChatWindow from "./components/ChatWindow";
 
 function App() {
+  const userId = "60d5c5f4e0f8a7451b7eaf46"; // Giả sử đã biết ID người dùng hiện tại
+  const conversationId = "673490d16630bd00b48b0913"; // Giả sử đã biết ID cuộc trò chuyện
+
   return (
-    <div className="App">
-      <header className="App-header">
-        <img src={logo} className="App-logo" alt="logo" />
-        <p>
-          Edit <code>src/App.js</code> and save to reload.
-        </p>
-        <a
-          className="App-link"
-          href="https://reactjs.org"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          Learn React
-        </a>
-      </header>
+    <div>
+      <h1>Chat App</h1>
+      <ChatWindow userId={userId} conversationId={conversationId} />
     </div>
   );
 }
