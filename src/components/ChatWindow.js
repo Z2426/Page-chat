@@ -1,113 +1,113 @@
 import React, { useState, useEffect, useRef } from "react";
-import { fetchChatHistory } from "../services/api"; // API để fetch lịch sử tin nhắn
 import socket from "../services/socket"; // Socket.IO client instance
-import Message from "./Message"; // Component để hiển thị tin nhắn
+import { fetchChatHistory } from "../services/api"; // Import necessary functions
 
 const ChatWindow = ({ userId, conversationId }) => {
-    const [messages, setMessages] = useState([]); // Danh sách tin nhắn
-    const [isConnected, setIsConnected] = useState(false); // Trạng thái kết nối
-    const [loadingHistory, setLoadingHistory] = useState(false); // Trạng thái loading cho lịch sử tin nhắn
-    const chatContainerRef = useRef(null);
+    const [messages, setMessages] = useState([]); // List of messages
+    const [isConnected, setIsConnected] = useState(false); // Connection status
+    const [loadingHistory, setLoadingHistory] = useState(false); // Loading history flag
+    const chatContainerRef = useRef(null); // Ref to the chat container to handle scroll
 
-    // Fetch lịch sử tin nhắn
     useEffect(() => {
+        // Fetch chat history when conversationId changes
         const loadChatHistory = async () => {
             try {
-                setLoadingHistory(true);
-                const response = await fetchChatHistory(conversationId, 20); // Fetch 20 tin nhắn mới nhất
+                const response = await fetchChatHistory(conversationId, 20); // Fetch last 20 messages
                 if (response?.messages) {
-                    setMessages(response.messages);
+                    setMessages(response.messages); // Set messages
                 }
             } catch (error) {
-                console.error("Lỗi khi lấy lịch sử tin nhắn:", error);
-            } finally {
-                setLoadingHistory(false);
+                console.error("Error fetching chat history:", error);
             }
         };
 
-        loadChatHistory();
-    }, [conversationId]);
+        // Fetch chat history when conversationId changes
+        if (conversationId) {
+            loadChatHistory();
+        }
 
-    // Kết nối Socket.IO và lắng nghe sự kiện
-    useEffect(() => {
-        socket.on("connect", () => {
-            setIsConnected(true);
-            if (userId) {
-                socket.emit("userOnline", { userId });
-                console.log(`Gửi sự kiện userOnline với userId: ${userId}`);
-            }
-            console.log("Kết nối thành công với Socket.IO");
-        });
+        // Initialize socket connection
+        const connectSocket = () => {
+            socket.connect(); // Explicitly connect when useEffect runs
 
-        socket.on("connect_error", (error) => {
-            setIsConnected(false);
-            console.error("Lỗi kết nối Socket.IO:", error);
-        });
+            socket.on("connect", () => {
+                setIsConnected(true);
+                if (userId) {
+                    socket.emit("userOnline", { userId }); // Notify server that user is online
+                    console.log(`Sent userOnline event with userId: ${userId}`);
+                }
+                console.log("Successfully connected to Socket.IO");
+            });
 
-        socket.on("disconnect", () => {
-            setIsConnected(false);
-            console.log("Mất kết nối Socket.IO");
-        });
+            socket.on("connect_error", (error) => {
+                setIsConnected(false);
+                console.error("Socket.IO connection error:", error);
+            });
 
-        // Lắng nghe tin nhắn mới từ server
-        const handleIncomingMessage = (data) => {
-            const { message } = data;
-            console.log("Nhận được tin nhắn từ server:", message);
+            socket.on("disconnect", () => {
+                setIsConnected(false);
+                console.log("Socket.IO disconnected");
+            });
+        };
 
+        // Handle incoming messages from server
+        const handleIncomingMessage = (message) => {
+            console.log("Received message from server:", message);
             if (message.conversationId === conversationId) {
-                setMessages((prevMessages) => [...prevMessages, message]); // Thêm tin nhắn vào cuối danh sách
-
-                // Cuộn xuống dưới cùng khi có tin nhắn mới
-                chatContainerRef.current?.scrollTo({
-                    top: chatContainerRef.current.scrollHeight,
-                    behavior: "smooth",
-                });
+                setMessages((prev) => [...prev, message]); // Add new message to the list
             }
         };
 
-        // Lắng nghe sự kiện "receivePersonalMessage" từ server
         socket.on("receivePersonalMessage", handleIncomingMessage);
 
-        // Cleanup khi unmount hoặc khi sự kiện thay đổi
+        // Call connectSocket to establish the connection
+        connectSocket();
+
+        // Cleanup on component unmount
         return () => {
-            socket.off("receivePersonalMessage", handleIncomingMessage);
             socket.off("connect");
             socket.off("connect_error");
             socket.off("disconnect");
+            socket.off("receivePersonalMessage", handleIncomingMessage);
+            socket.disconnect(); // Disconnect when cleaning up
         };
-    }, [conversationId]);
+    }, [userId, conversationId]); // Reconnect when userId or conversationId changes
 
-    // Kiểm tra khi cuộn để tải lịch sử tin nhắn cũ
+    // Format the timestamp into a human-readable string (Date + Time)
+    const formatTimestamp = (timestamp) => {
+        const date = new Date(timestamp);
+        return date.toLocaleString(); // Localized format (Date and Time)
+    };
+
+    // Sort messages in ascending order of timestamp (oldest first)
+    const sortedMessages = [...messages].sort((a, b) => a.timestamp - b.timestamp);
+
+    // Handle scroll event to load old messages
     const handleScroll = () => {
         const { scrollTop, scrollHeight, clientHeight } = chatContainerRef.current;
 
-        // Kiểm tra nếu người dùng đang cuộn lên trên (đến đầu)
+        // If user scrolls to the top, load older messages
         if (scrollTop === 0 && !loadingHistory) {
-            loadOldMessages(); // Gọi hàm tải lịch sử tin nhắn cũ
-        }
-
-        // Nếu cuộn xuống dưới cùng, không làm gì vì đã có tin nhắn mới
-        if (scrollTop + clientHeight === scrollHeight) {
-            // Đảm bảo khi cuộn xuống dưới sẽ không bị tự động cuộn lại khi đang tải lịch sử
+            loadOldMessages();
         }
     };
 
-    // Tải lịch sử tin nhắn cũ
+    // Load old messages when scrolling up
     const loadOldMessages = async () => {
         setLoadingHistory(true);
         try {
-            const response = await fetchChatHistory(conversationId, 20, messages[0]._id); // Fetch 20 tin nhắn cũ hơn
+            const response = await fetchChatHistory(conversationId, 20, messages[0]._id); // Fetch 20 older messages
             if (response?.messages) {
-                setMessages((prevMessages) => [...response.messages, ...prevMessages]); // Thêm tin nhắn cũ vào đầu danh sách
+                setMessages((prevMessages) => [...response.messages, ...prevMessages]); // Prepend old messages
             }
         } catch (error) {
-            console.error("Lỗi khi tải tin nhắn cũ:", error);
+            console.error("Error loading old messages:", error);
         } finally {
             setLoadingHistory(false);
         }
     };
 
-    // Gửi tin nhắn
+    // Send new message
     const sendMessage = (text) => {
         const message = {
             senderId: userId,
@@ -116,12 +116,19 @@ const ChatWindow = ({ userId, conversationId }) => {
             timestamp: Date.now(),
         };
 
-        socket.emit("sendMessage", message); // Gửi tin nhắn qua socket
-        setMessages((prev) => [...prev, message]); // Hiển thị ngay tin nhắn mới
+        socket.emit("sendMessage", message); // Send message via socket
+        setMessages((prev) => [...prev, message]); // Immediately show new message in chat
     };
+
+    useEffect(() => {
+        if (chatContainerRef.current) {
+            chatContainerRef.current.scrollTop = chatContainerRef.current.scrollHeight; // Scroll to the bottom when new messages are added
+        }
+    }, [messages]); // Scroll to the bottom on new message
 
     return (
         <div>
+            {/* Display chat window */}
             <div
                 style={{
                     border: "1px solid #ddd",
@@ -129,180 +136,68 @@ const ChatWindow = ({ userId, conversationId }) => {
                     maxHeight: "400px",
                     overflowY: "auto",
                     display: "flex",
-                    flexDirection: "column", // Giữ tin nhắn hiển thị từ trên xuống dưới
+                    flexDirection: "column-reverse", // Ensures that the latest message is at the bottom
                 }}
                 ref={chatContainerRef}
-                onScroll={handleScroll} // Lắng nghe sự kiện cuộn
+                onScroll={handleScroll} // Listen for scroll events to load old messages
             >
-                {loadingHistory && <p>Đang tải lịch sử tin nhắn...</p>}
-                {!loadingHistory && messages.length === 0 && (
-                    <p>Chưa có tin nhắn nào.</p>
+                {/* Render messages */}
+                {sortedMessages.length === 0 ? (
+                    <p>No messages yet. Start chatting!</p>
+                ) : (
+                    sortedMessages.map((msg) => {
+                        const isSender = msg.senderId === userId;
+                        return (
+                            <div
+                                key={msg._id}
+                                style={{
+                                    display: "flex",
+                                    justifyContent: isSender ? "flex-end" : "flex-start", // Align message based on sender
+                                    marginBottom: "10px",
+                                }}
+                            >
+                                <div
+                                    style={{
+                                        backgroundColor: isSender ? "#DCF8C6" : "#E4E6EB", // Color based on sender
+                                        padding: "8px 12px",
+                                        borderRadius: "10px",
+                                        maxWidth: "80%",
+                                        wordWrap: "break-word",
+                                    }}
+                                >
+                                    <strong>{isSender ? "You" : msg.sender}</strong>: {msg.text}
+                                    <div
+                                        style={{
+                                            fontSize: "0.8em",
+                                            color: "#888",
+                                            marginTop: "5px",
+                                            textAlign: isSender ? "right" : "left",
+                                        }}
+                                    >
+                                        {formatTimestamp(msg.timestamp)} {/* Display timestamp */}
+                                    </div>
+                                </div>
+                            </div>
+                        );
+                    })
                 )}
-                {messages.map((msg) => (
-                    <Message key={msg._id} message={msg} currentUserId={userId} />
-                ))}
             </div>
+
+            {/* Input field to send new messages */}
             <div>
                 <input
                     type="text"
-                    placeholder="Nhập tin nhắn..."
+                    placeholder="Type your message..."
                     onKeyDown={(e) => {
                         if (e.key === "Enter" && e.target.value.trim()) {
                             sendMessage(e.target.value);
-                            e.target.value = "";
+                            e.target.value = ""; // Clear the input field after sending
                         }
                     }}
                 />
-            </div>
-            <div style={{ marginTop: "10px" }}>
-                <strong>Trạng thái: </strong>
-                <span style={{ color: isConnected ? "green" : "red" }}>
-                    {isConnected ? "Đang online" : "Mất kết nối"}
-                </span>
             </div>
         </div>
     );
 };
 
 export default ChatWindow;
-
-// import React, { useState, useEffect, useRef } from "react";
-// import { fetchChatHistory } from "../services/api"; // API để fetch lịch sử tin nhắn
-// import socket from "../services/socket"; // Socket.IO client instance
-// import Message from "./Message"; // Component để hiển thị tin nhắn
-
-// const ChatWindow = ({ userId, conversationId }) => {
-//     const [messages, setMessages] = useState([]); // Danh sách tin nhắn
-//     const [isConnected, setIsConnected] = useState(false); // Trạng thái kết nối
-//     const [loadingHistory, setLoadingHistory] = useState(true); // Trạng thái loading cho lịch sử tin nhắn
-//     const chatContainerRef = useRef(null);
-
-//     // Fetch lịch sử tin nhắn
-//     useEffect(() => {
-//         const loadChatHistory = async () => {
-//             try {
-//                 setLoadingHistory(true);
-//                 const response = await fetchChatHistory(conversationId, 20); // Fetch 20 tin nhắn mới nhất
-//                 if (response?.messages) {
-//                     setMessages(response.messages);
-
-//                     // Cuộn xuống dưới cùng khi tải xong lịch sử tin nhắn
-//                     setTimeout(() => {
-//                         chatContainerRef.current?.scrollTo({
-//                             top: chatContainerRef.current.scrollHeight,
-//                             behavior: "smooth",
-//                         });
-//                     }, 100);
-//                 }
-//             } catch (error) {
-//                 console.error("Lỗi khi lấy lịch sử tin nhắn:", error);
-//             } finally {
-//                 setLoadingHistory(false);
-//             }
-//         };
-
-//         loadChatHistory();
-//     }, [conversationId]);
-
-//     // Kết nối Socket.IO và lắng nghe sự kiện
-//     useEffect(() => {
-//         // Kết nối socket
-//         socket.on("connect", () => {
-//             setIsConnected(true);
-//             if (userId) {
-//                 socket.emit("userOnline", { userId });
-//                 console.log(`Gửi sự kiện userOnline với userId: ${userId}`);
-//             }
-//             console.log("Kết nối thành công với Socket.IO");
-//         });
-
-//         socket.on("connect_error", (error) => {
-//             setIsConnected(false);
-//             console.error("Lỗi kết nối Socket.IO:", error);
-//         });
-
-//         socket.on("disconnect", () => {
-//             setIsConnected(false);
-//             console.log("Mất kết nối Socket.IO");
-//         });
-
-//         // Lắng nghe tin nhắn mới từ server
-//         const handleIncomingMessage = (message) => {
-//             console.log("Nhận được tin nhắn từ server:", message);
-//             if (message.conversationId === conversationId) {
-//                 setMessages((prev) => [...prev, message]);
-//                 chatContainerRef.current?.scrollTo({
-//                     top: chatContainerRef.current.scrollHeight,
-//                     behavior: "smooth",
-//                 });
-//             }
-//         };
-
-//         socket.on("receivePersonalMessage", handleIncomingMessage);
-
-//         // Cleanup khi unmount
-//         return () => {
-//             socket.off("connect");
-//             socket.off("connect_error");
-//             socket.off("disconnect");
-//             socket.off("receiveMessage", handleIncomingMessage);
-//         };
-//     }, [conversationId, userId]);
-
-//     // Gửi tin nhắn
-//     const sendMessage = (text) => {
-//         const message = {
-//             senderId: userId,
-//             conversationId,
-//             text,
-//             timestamp: Date.now(),
-//         };
-
-//         socket.emit("sendMessage", message); // Gửi tin nhắn qua socket
-//         setMessages((prev) => [...prev, message]); // Hiển thị ngay tin nhắn mới
-//     };
-
-//     return (
-//         <div>
-//             <div
-//                 style={{
-//                     border: "1px solid #ddd",
-//                     padding: "10px",
-//                     maxHeight: "400px",
-//                     overflowY: "auto",
-//                     display: "flex",
-//                     flexDirection: "column-reverse", // Tin nhắn mới nhất hiển thị ở dưới cùng
-//                 }}
-//                 ref={chatContainerRef}
-//             >
-//                 {loadingHistory && <p>Đang tải lịch sử tin nhắn...</p>}
-//                 {!loadingHistory && messages.length === 0 && (
-//                     <p>Chưa có tin nhắn nào.</p>
-//                 )}
-//                 {messages.map((msg, index) => (
-//                     <Message key={msg._id || index} message={msg} currentUserId={userId} />
-//                 ))}
-//             </div>
-//             <div>
-//                 <input
-//                     type="text"
-//                     placeholder="Nhập tin nhắn..."
-//                     onKeyDown={(e) => {
-//                         if (e.key === "Enter" && e.target.value.trim()) {
-//                             sendMessage(e.target.value);
-//                             e.target.value = "";
-//                         }
-//                     }}
-//                 />
-//             </div>
-//             <div style={{ marginTop: "10px" }}>
-//                 <strong>Trạng thái: </strong>
-//                 <span style={{ color: isConnected ? "green" : "red" }}>
-//                     {isConnected ? "Đang online" : "Mất kết nối"}
-//                 </span>
-//             </div>
-//         </div>
-//     );
-// };
-
-// export default ChatWindow;
