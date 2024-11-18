@@ -5,6 +5,7 @@ import { fetchChatHistory } from "../services/api"; // Import necessary function
 const ChatWindow = ({ userId, conversationId }) => {
     const [messages, setMessages] = useState([]); // List of messages
     const [isConnected, setIsConnected] = useState(false); // Connection status
+    const [isOnline, setIsOnline] = useState(false); // User online status
     const [loadingHistory, setLoadingHistory] = useState(false); // Loading history flag
     const [currentPage, setCurrentPage] = useState(1); // Track current page
     const chatContainerRef = useRef(null); // Ref to the chat container to handle scroll
@@ -33,6 +34,7 @@ const ChatWindow = ({ userId, conversationId }) => {
 
             socket.on("connect", () => {
                 setIsConnected(true);
+                setIsOnline(true); // Set user as online when connected
                 if (userId) {
                     socket.emit("userOnline", { userId }); // Notify server that user is online
                     console.log(`Sent userOnline event with userId: ${userId}`);
@@ -47,6 +49,7 @@ const ChatWindow = ({ userId, conversationId }) => {
 
             socket.on("disconnect", () => {
                 setIsConnected(false);
+                setIsOnline(false); // Set user as offline when disconnected
                 console.log("Socket.IO disconnected");
             });
         };
@@ -141,6 +144,20 @@ const ChatWindow = ({ userId, conversationId }) => {
     return (
         <div>
             {/* Display chat window */}
+            <div>
+                <div style={{ display: "flex", alignItems: "center", marginBottom: "10px" }}>
+                    <div
+                        style={{
+                            width: "10px",
+                            height: "10px",
+                            borderRadius: "50%",
+                            backgroundColor: isOnline ? "green" : "red",
+                            marginRight: "5px",
+                        }}
+                    ></div>
+                    <span>{isOnline ? "Online" : "Offline"}</span>
+                </div>
+            </div>
             <div
                 style={{
                     border: "1px solid #ddd",
@@ -152,7 +169,6 @@ const ChatWindow = ({ userId, conversationId }) => {
                 onScroll={handleScroll} // Listen for scroll events to load old messages
             >
                 {/* Render messages */}
-                // Inside the render function where you're mapping through messages
                 {messages.length === 0 ? (
                     <p>No messages yet. Start chatting!</p>
                 ) : (
@@ -189,7 +205,6 @@ const ChatWindow = ({ userId, conversationId }) => {
                         </div>
                     ))
                 )}
-
             </div>
 
             {/* Input field to send new messages */}
