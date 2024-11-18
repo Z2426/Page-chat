@@ -6,15 +6,16 @@ const ChatWindow = ({ userId, conversationId }) => {
     const [messages, setMessages] = useState([]); // List of messages
     const [isConnected, setIsConnected] = useState(false); // Connection status
     const [loadingHistory, setLoadingHistory] = useState(false); // Loading history flag
+    const [currentPage, setCurrentPage] = useState(1); // Track current page
     const chatContainerRef = useRef(null); // Ref to the chat container to handle scroll
 
     useEffect(() => {
         // Fetch chat history when conversationId changes
         const loadChatHistory = async () => {
             try {
-                const response = await fetchChatHistory(conversationId, 20); // Fetch last 20 messages
+                const response = await fetchChatHistory(conversationId, 10); // Fetch 10 latest messages
                 if (response?.messages) {
-                    setMessages(response.messages); // Set messages
+                    setMessages(response.messages.reverse()); // Reverse to display the most recent first
                 }
             } catch (error) {
                 console.error("Error fetching chat history:", error);
@@ -54,7 +55,8 @@ const ChatWindow = ({ userId, conversationId }) => {
         const handleIncomingMessage = (message) => {
             console.log("Received message from server:", message);
             if (message.conversationId === conversationId) {
-                setMessages((prev) => [...prev, message]); // Add new message to the list
+                // Add new message at the end (newest last)
+                setMessages((prev) => [...prev, message]); // Add new message at the end
             }
         };
 
@@ -79,9 +81,6 @@ const ChatWindow = ({ userId, conversationId }) => {
         return date.toLocaleString(); // Localized format (Date and Time)
     };
 
-    // Sort messages in ascending order of timestamp (oldest first)
-    const sortedMessages = [...messages].sort((a, b) => a.timestamp - b.timestamp);
-
     // Handle scroll event to load old messages
     const handleScroll = () => {
         const { scrollTop, scrollHeight, clientHeight } = chatContainerRef.current;
@@ -94,11 +93,23 @@ const ChatWindow = ({ userId, conversationId }) => {
 
     // Load old messages when scrolling up
     const loadOldMessages = async () => {
+        if (loadingHistory || !conversationId) return;
         setLoadingHistory(true);
+
         try {
-            const response = await fetchChatHistory(conversationId, 20, messages[0]._id); // Fetch 20 older messages
+            const response = await fetchChatHistory(conversationId, 10, currentPage + 1); // Fetch 10 older messages
             if (response?.messages) {
-                setMessages((prevMessages) => [...response.messages, ...prevMessages]); // Prepend old messages
+                const newMessages = response.messages.reverse(); // Reverse to display older messages first
+                setMessages((prevMessages) => {
+                    // Remove duplicates by using Map (ensures _id is unique)
+                    const uniqueMessages = [
+                        ...new Map(
+                            [...newMessages, ...prevMessages].map((msg) => [msg._id, msg])
+                        ).values(),
+                    ];
+                    return uniqueMessages;
+                });
+                setCurrentPage((prev) => prev + 1); // Increment current page
             }
         } catch (error) {
             console.error("Error loading old messages:", error);
@@ -117,9 +128,10 @@ const ChatWindow = ({ userId, conversationId }) => {
         };
 
         socket.emit("sendMessage", message); // Send message via socket
-        setMessages((prev) => [...prev, message]); // Immediately show new message in chat
+        setMessages((prev) => [...prev, message]); // Add new message at the end (newest last)
     };
 
+    // Ensure the chat scrolls to the bottom when new messages are added
     useEffect(() => {
         if (chatContainerRef.current) {
             chatContainerRef.current.scrollTop = chatContainerRef.current.scrollHeight; // Scroll to the bottom when new messages are added
@@ -135,52 +147,49 @@ const ChatWindow = ({ userId, conversationId }) => {
                     padding: "10px",
                     maxHeight: "400px",
                     overflowY: "auto",
-                    display: "flex",
-                    flexDirection: "column-reverse", // Ensures that the latest message is at the bottom
                 }}
                 ref={chatContainerRef}
                 onScroll={handleScroll} // Listen for scroll events to load old messages
             >
                 {/* Render messages */}
-                {sortedMessages.length === 0 ? (
+                // Inside the render function where you're mapping through messages
+                {messages.length === 0 ? (
                     <p>No messages yet. Start chatting!</p>
                 ) : (
-                    sortedMessages.map((msg) => {
-                        const isSender = msg.senderId === userId;
-                        return (
+                    messages.map((msg, index) => (
+                        <div
+                            key={msg._id || `message-${index}`} // Ensure that each element has a unique key
+                            style={{
+                                display: "flex",
+                                justifyContent: msg.senderId === userId ? "flex-end" : "flex-start", // Align based on sender
+                                marginBottom: "10px",
+                            }}
+                        >
                             <div
-                                key={msg._id}
                                 style={{
-                                    display: "flex",
-                                    justifyContent: isSender ? "flex-end" : "flex-start", // Align message based on sender
-                                    marginBottom: "10px",
+                                    backgroundColor: msg.senderId === userId ? "#cce7ff" : "#E4E6EB", // Different background color for different senders
+                                    padding: "8px 12px",
+                                    borderRadius: "10px",
+                                    maxWidth: "80%",
+                                    wordWrap: "break-word",
                                 }}
                             >
+                                <p>{msg.text}</p>
                                 <div
                                     style={{
-                                        backgroundColor: isSender ? "#DCF8C6" : "#E4E6EB", // Color based on sender
-                                        padding: "8px 12px",
-                                        borderRadius: "10px",
-                                        maxWidth: "80%",
-                                        wordWrap: "break-word",
+                                        fontSize: "0.8em",
+                                        color: "#888",
+                                        marginTop: "5px",
+                                        textAlign: "left", // All timestamps aligned left for uniformity
                                     }}
                                 >
-                                    <strong>{isSender ? "You" : msg.sender}</strong>: {msg.text}
-                                    <div
-                                        style={{
-                                            fontSize: "0.8em",
-                                            color: "#888",
-                                            marginTop: "5px",
-                                            textAlign: isSender ? "right" : "left",
-                                        }}
-                                    >
-                                        {formatTimestamp(msg.timestamp)} {/* Display timestamp */}
-                                    </div>
+                                    {formatTimestamp(msg.timestamp)} {/* Display timestamp */}
                                 </div>
                             </div>
-                        );
-                    })
+                        </div>
+                    ))
                 )}
+
             </div>
 
             {/* Input field to send new messages */}
