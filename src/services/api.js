@@ -20,3 +20,23 @@ export const fetchConversationMembers = async (conversationId) => {
     const response = await axios.get(url);
     return response.data;
 };
+
+export const ApisendMessage = async (messageBody) => {
+    try {
+        // Đảm bảo PORT được thiết lập
+        const port = process.env.PORT || '3007'; // Mặc định là 3007 nếu không có PORT
+        const url = `http://localhost:${port}/chat/message/send`;
+
+        // Gửi yêu cầu POST với body đã định nghĩa
+        const response = await axios.post(url, messageBody, {
+            headers: {
+                'Content-Type': 'application/json', // Đảm bảo định dạng JSON
+            },
+        });
+
+        return response.data; // Trả về dữ liệu từ API
+    } catch (error) {
+        console.error('Error sending message:', error.message);
+        throw error; // Ném lỗi ra ngoài để xử lý
+    }
+};
